@@ -11,7 +11,7 @@ Middleware routeWith<T>(
 }) =>
     _RoutingMiddlewareBuilder(router, toHandler: toHandler).build();
 
-final _pathParametersStorage = ContextProperty<Map<Symbol, String>>();
+// final _pathParametersStorage = ContextProperty<Map<Symbol, String>>();
 
 class _RoutingMiddlewareBuilder<T> {
   final Router<T> _router;
@@ -35,7 +35,7 @@ class _RoutingMiddlewareBuilder<T> {
       final url = ctx.request.url; // TODO: Use requestUri
       final match = _router.lookup(req.method.convert(), url.path);
       if (match != null) {
-        ctx._pathParameters = match.parameters;
+        // ctx._pathParameters = match.parameters;
         final handler = _toHandler(match.value);
         return await handler(ctx);
       } else {
@@ -47,12 +47,12 @@ class _RoutingMiddlewareBuilder<T> {
   Middleware build() => _meddle;
 }
 
-extension RequestContextEx on RequestContext {
-  Map<Symbol, String> get pathParameters => _pathParametersStorage[this];
-
-  set _pathParameters(final Map<Symbol, String> value) =>
-      _pathParametersStorage[this] = value;
-}
+// extension RequestContextEx on RequestContext {
+//   Map<Symbol, String> get pathParameters => _pathParametersStorage[this];
+//
+//   set _pathParameters(final Map<Symbol, String> value) =>
+//       _pathParametersStorage[this] = value;
+// }
 
 bool _isSubtype<S, T>() => <S>[] is List<T>;
 

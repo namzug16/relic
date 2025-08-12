@@ -3,6 +3,7 @@ import 'dart:collection';
 import 'lookup_result.dart';
 import 'normalized_path.dart';
 import 'path_trie.dart';
+import 'route_provenance_store.dart';
 
 enum Method {
   get,
@@ -44,45 +45,29 @@ extension<T> on _RouterEntry<T>? {
   _RouterEntry<T> get orNew => this ?? _RouterEntry<T>();
 }
 
-/// A URL router that maps path patterns to values of type [T].
-///
-/// Supports static paths (e.g., `/users/profile`) and paths with named parameters
-/// (e.g., `/users/:id`). Normalizes paths before matching.
-final class Router<T> {
+final class Router<T> extends RouteBuilder<T> {
+  Router() : super(null, RouteProvenanceStore<T>(), PathTrie<_RouterEntry<T>>());
+
   /// Stores static routes (no parameters) for fast lookups using a HashMap.
   /// The key is the [NormalizedPath] representation of the route.
   ///
   /// This cache is build lazily on lookup.
   final _staticCache = HashMap<NormalizedPath, _RouterEntry<T>>();
 
-  /// Stores all routes (with or without parameters) in a [PathTrie] for efficient
-  /// matching and parameter extraction.
-  final _allRoutes = PathTrie<_RouterEntry<T>>();
-
-  /// Adds a route definition to the router.
-  ///
-  /// The [path] string defines the route pattern. Segments starting with `:` (e.g.,
-  /// `:id`) are treated as parameters. The associated [value] (e.g., a request
-  /// handler) is stored for this route.
+  @override
   void add(final Method method, final String path, final T route) {
-    final normalizedPath = NormalizedPath(path); // Normalize upfront
-    final entry = _allRoutes.addOrUpdateInPlace(
-      normalizedPath,
-      (final r) => (r.orNew)..add(method, normalizedPath, route),
-    );
+    final (normalizedPath, entry) = _add(method, path, route);
+
     if (!normalizedPath.hasParameters) {
       // Prime cache on add (but not on attach)
       _staticCache[normalizedPath] = entry;
     }
+
+    _routeProvenanceStorage.set(route, this);
   }
 
-  /// Attaches a sub-router to this router at the specified [path].
-  ///
-  /// The [path] string defines the route prefix for the sub-router. All routes
-  /// defined in the sub-router will be prefixed with this path when matched.
-  void attach(final String path, final Router<T> subRouter) {
-    _allRoutes.attach(NormalizedPath(path), subRouter._allRoutes);
-    subRouter._staticCache.clear();
+  RouteBuilder<T> getRouteProvenance(final T route) {
+    return _routeProvenanceStorage.get(route) ?? this;
   }
 
   /// Looks up a route matching the provided [path].
@@ -125,12 +110,86 @@ final class Router<T> {
       entry.remaining,
     );
   }
+}
+
+final class Group<T> extends RouteBuilder<T> {
+  Group(super.parent, super.routeProvenanceStorage, this.prefix, super.allRoutes);
+
+  final String prefix;
+
+  @override
+  void add(final Method method, final String path, final T route) {
+    _add(method, prefix + path, route);
+    _routeProvenanceStorage.set(route, this);
+  }
+
+  @override
+  Group<T> group(final String prefix) {
+    // return super.group(this.prefix + prefix);
+    return Group(this, _routeProvenanceStorage, this.prefix + prefix, _allRoutes);
+  }
+}
+
+/// A URL router that maps path patterns to values of type [T].
+///
+/// Supports static paths (e.g., `/users/profile`) and paths with named parameters
+/// (e.g., `/users/:id`). Normalizes paths before matching.
+abstract class RouteBuilder<T> {
+  RouteBuilder(this.parent, this._routeProvenanceStorage, this._allRoutes);
+
+  final RouteBuilder<T>? parent;
+
+  final RouteProvenanceStore<T> _routeProvenanceStorage;
+
+  final Map<String, dynamic> context = {};
+
+  /// Stores all routes (with or without parameters) in a [PathTrie] for efficient
+  /// matching and parameter extraction.
+  // final _allRoutes = PathTrie<_RouterEntry<T>>();
+  final PathTrie<_RouterEntry<T>> _allRoutes;
+
+  /// Adds a route definition to the router.
+  ///
+  /// The [path] string defines the route pattern. Segments starting with `:` (e.g.,
+  /// `:id`) are treated as parameters. The associated [value] (e.g., a request
+  /// handler) is stored for this route.
+  void add(final Method method, final String path, final T route);
+
+  (NormalizedPath, _RouterEntry<T>) _add(final Method method, final String path, final T route) {
+    final normalizedPath = NormalizedPath(path); // Normalize upfront
+    final entry = _allRoutes.addOrUpdateInPlace(
+      normalizedPath,
+      (final r) => (r.orNew)..add(method, normalizedPath, route),
+    );
+
+    if (method == Method.get) {
+      _allRoutes.addOrUpdateInPlace(
+        normalizedPath,
+        (final r) => (r.orNew)..add(Method.head, normalizedPath, route),
+      );
+    }
+
+    return (normalizedPath, entry);
+  }
+
+  /// Attaches a sub-router to this router at the specified [path].
+  ///
+  /// The [path] string defines the route prefix for the sub-router. All routes
+  /// defined in the sub-router will be prefixed with this path when matched.
+  void attach(final String path, final Router<T> subRouter) {
+    _allRoutes.attach(NormalizedPath(path), subRouter._allRoutes);
+    subRouter._staticCache.clear();
+  }
+
+  Group<T> group(final String prefix) {
+    return Group(this, _routeProvenanceStorage, prefix, _allRoutes);
+  }
 
   /// Returns true if the router has no routes.
   bool get isEmpty => _allRoutes.isEmpty;
 }
 
-extension RouteEx<T> on Router<T> {
+extension RouteBuilderEx<T> on RouteBuilder<T> {
   /// Adds a route definition for the GET HTTP method.
   ///
   /// Equivalent to calling `add(Method.get, path, value)`.
@@ -185,7 +244,7 @@ extension RouteEx<T> on Router<T> {
   ///
   /// This is a convenience method that calls `add` for each method in the [Method] enum.
   void any(final String path, final T value) {
-    for (final method in Method.values) {
+    for (final method in Method.values.where((final m) => m != Method.head)) {
       add(method, path, value);
     }
   }
