@@ -21,6 +21,38 @@ void main() {
     });
   });
 
+  group('Given a Response.html', () {
+    test('when readAsString is called then it returns the HTML string', () {
+      final response = Response.html('<main>Hello</main>');
+
+      expect(response.readAsString(), completion(equals('<main>Hello</main>')));
+    });
+
+    test('when checked then it sets status code and content type', () {
+      final response = Response.html('<main>Hello</main>');
+      final contentType = response.body.bodyType?.mimeType;
+      final encoding = response.body.bodyType?.encoding;
+
+      expect(response.statusCode, equals(200));
+      expect(contentType?.primaryType, equals('text'));
+      expect(contentType?.subType, equals('html'));
+      expect(encoding?.name, equals('utf-8'));
+    });
+
+    test('when a status code is supplied then it uses that status code', () {
+      final response = Response.html(
+        '<form>Invalid email</form>',
+        statusCode: 422,
+      );
+
+      expect(response.statusCode, equals(422));
+      expect(
+        response.readAsString(),
+        completion(equals('<form>Invalid email</form>')),
+      );
+    });
+  });
+
   test(
     'Given a response with a Uint8List body when read then it does not copy the body',
     () async {

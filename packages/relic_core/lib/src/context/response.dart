@@ -100,6 +100,19 @@ class Response extends Message implements Result {
         headers: headers ?? Headers.empty(),
       );
 
+  /// Constructs a 200 OK HTML response.
+  ///
+  /// This is a convenience constructor for responses whose body is HTML.
+  Response.html(
+    final String html, {
+    final int statusCode = 200,
+    final Headers? headers,
+  }) : this(
+         statusCode,
+         body: Body.fromString(html, mimeType: MimeType.html),
+         headers: headers ?? Headers.empty(),
+       );
+
   /// Constructs a 301 Moved Permanently response.
   ///
   /// This indicates that the requested resource has moved permanently to a new
